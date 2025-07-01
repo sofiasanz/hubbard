@@ -65,9 +65,12 @@ class HubbardHamiltonian(object):
         H0 = self.TBHam.copy()
         H0.shift(np.pi) # Apply a shift to incorporate effect of S
         if self.spin_size > 1:
-            s = H0.H.tocsr(0).data.tostring() + H0.H.tocsr(1).data.tostring()
+            #s = H0.H.tocsr(0).data.tostring() + H0.H.tocsr(1).data.tostring()
+            s = H0.H.tocsr(0).data + H0.H.tocsr(1).data
+
         else:
-            s = H0.H.tocsr(0).data.tostring()
+            #s = H0.H.tocsr(0).data.tostring()
+            s = H0.H.tocsr(0).data
         self._hash_base = s
         del H0
 

@@ -211,7 +211,7 @@ class NEGF:
                             # And for each point in the Neq CC
                             self._cc_neq_SE[spin][ik][ic][i] = se.self_energy(cc, k=k, **kw)
 
-    def calc_n_open(self, H, q, qtol=1e-5, a=1.):
+    def calc_n_open(self, H, q, qtol=1e-5, method='residual', gamma=1.0,lambda_tf=7.4, self_capacitance=True, C_self = 0.1, mixing=None,alpha=0.2):
         """
         Method to compute the spin densities from the non-equilibrium Green's function
 
@@ -224,6 +224,15 @@ class NEGF:
         qtol: float, optional
             tolerance to which the charge is going to be converged in the internal loop
             that finds the potential of the device (i.e. that makes the device neutrally charged)
+        method: str
+            model in which the charge will be calculated. The options are residual 'residual' or thomas fermi 'tf'
+        lambda_tf: float
+            Thomas Fermi wavelength from https://arxiv.org/pdf/1010.0508 1.42 Å
+            Appl. Phys. Lett. 92, 123110 (2008)                          7.4  Å
+        C_self: str
+            Self-capacitance term, e per eV per atom (i.e., Kii = 10 eV/e)
+        mixing: str, optional
+            	Use 'damped' for improve convergence with dq
 
         Returns
         -------
@@ -363,8 +372,7 @@ class NEGF:
 
         # Save Fermi-level of the device
         self.Ef = Ef
-
-
+        
         if self.NEQ:
             # Add potential in each site depending on how much the neq charges deviate from the eq situation. This term comes from the extended Huckel model
             # a should be positive: if q_neq > q_eq then the potential should rise (less favourable for electrons to occupy that site)
@@ -373,7 +381,32 @@ class NEGF:
             q_eq = self.H_eq.n.sum(axis=0)
             dq = (q_neq - q_eq)[self.a_dev]
             E = self.H.TBHam.tocsr(spin).diagonal()[self.a_dev]
-            self.H.TBHam[self.a_dev, self.a_dev] = E + a * dq
+
+            # Modification by Alan Anaya
+            
+            if method == 'residual':
+                self.H.TBHam[self.a_dev, self.a_dev] = E + gamma * dq
+                
+            if method == 'tf':
+                # Loop over atoms in the Device
+            	for i,atoms_i in enumerate(self.a_dev):
+            	    #  On-site Change on Atom i
+            	    dV = 0
+            	    for j ,atoms_j in enumerate(self.a_dev):
+            	    	if atoms_i != atoms_j:
+                	        rij	= self.H.TBHam.geometry.rij(atoms_i,atoms_j)
+                	        Kij = (14.4/rij)*np.exp(-rij/lambda_tf) #  1/(4πε0) in eV/Å
+                	        dV += Kij*dq[j]
+            	    # Self-capacitance term
+            	    if self_capacitance==True:
+                	    Kii = 1.0 / C_self
+                	    dV += Kii * dq[i]
+            	    # For debugging
+                    #print(atoms_i,dV)
+            	    if mixing == None:
+            	        self.H.TBHam[atoms_i,atoms_i] += dV
+            	    if mixing == 'damped':
+            	        self.H.TBHam[atoms_i,atoms_i] += alpha*dV
         # Return spin densities and total energy, if the Hamiltonian is not spin-polarized
         # multiply Etot by 2 for spin degeneracy
         return ni, (2./H.spin_size)*Etot
